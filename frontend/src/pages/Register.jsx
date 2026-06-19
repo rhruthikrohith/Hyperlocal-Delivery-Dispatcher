@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 
-function Register({ onSuccess, onSwitchToLogin }) {
+function Register({ onSuccess, onSwitchToLogin, initialRole = 'customer', onBackToHome }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('customer');
+  const [role, setRole] = useState(initialRole);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setRole(initialRole);
+  }, [initialRole]);
 
   const handleRegister = async () => {
     if (!name || !email || !password || !phone) {
@@ -56,6 +60,26 @@ function Register({ onSuccess, onSwitchToLogin }) {
           gap: '20px'
         }}
       >
+        {onBackToHome && (
+          <div 
+            onClick={onBackToHome}
+            style={{ 
+              alignSelf: 'flex-start', 
+              color: 'var(--text-muted)', 
+              fontSize: '0.85rem', 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              transition: 'color 0.2s',
+              marginBottom: '-8px'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+          >
+            ← Back to Home
+          </div>
+        )}
         <div style={{ textAlign: 'center' }}>
           <h2 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '6px', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Create Account

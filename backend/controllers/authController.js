@@ -41,7 +41,9 @@ export const register = async (req, res) => {
       email,
       password: hashedPassword,
       role: role || 'customer',
-      phone: phone || ''
+      phone: phone || '',
+      riderStatus: role === 'rider' ? 'online' : 'offline',
+      riderWorkload: 'available'
     });
 
     res.status(201).json({

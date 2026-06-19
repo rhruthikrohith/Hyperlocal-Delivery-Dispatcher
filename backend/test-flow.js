@@ -1,6 +1,5 @@
-import fetch from 'node-fetch'; // Just in case, but since Node 22 has global fetch, we'll try global fetch first, or fall back
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = `http://localhost:${process.env.PORT || 5001}/api`;
 
 async function runTestFlow() {
   console.log('=== STARTING HYPERLOCAL DISPATCHER FLOW TEST ===\n');
@@ -69,21 +68,34 @@ async function runTestFlow() {
     process.exit(1);
   }
 
-  // Step 4: Toggle Rider Status to Online (in case seeding sets it to offline or we want to verify toggle)
-  console.log('\nStep 4: Toggling Rider Status to ON...');
+  // Step 4: Ensure Rider Status is Online
+  console.log('\nStep 4: Ensuring Rider Status is ON...');
   try {
-    const toggleRes = await fetch(`${API_URL}/riders/toggle`, {
-      method: 'PUT',
+    const statsRes = await fetch(`${API_URL}/riders/stats`, {
+      method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${riderToken}`
       }
     });
-    if (!toggleRes.ok) throw new Error(`Toggle failed: ${toggleRes.statusText}`);
-    const toggleData = await toggleRes.json();
-    console.log(`✅ Rider Status updated:`, toggleData.message);
+    if (!statsRes.ok) throw new Error(`Stats failed: ${statsRes.statusText}`);
+    const statsData = await statsRes.json();
+    if (statsData.riderStatus !== 'online') {
+      const toggleRes = await fetch(`${API_URL}/riders/toggle`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${riderToken}`
+        }
+      });
+      if (!toggleRes.ok) throw new Error(`Toggle failed: ${toggleRes.statusText}`);
+      const toggleData = await toggleRes.json();
+      console.log(`✅ Rider Status updated to:`, toggleData.riderStatus);
+    } else {
+      console.log(`✅ Rider is already online.`);
+    }
   } catch (error) {
-    console.error('❌ Rider toggle status failed:', error.message);
+    console.error('❌ Ensuring rider online failed:', error.message);
     process.exit(1);
   }
 

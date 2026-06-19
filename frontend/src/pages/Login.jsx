@@ -2,7 +2,7 @@ import React, { useState, useContext } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
 
-function Login({ onSuccess, onSwitchToRegister }) {
+function Login({ onSuccess, onSwitchToRegister, onBackToHome }) {
   const { login } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -56,6 +56,26 @@ function Login({ onSuccess, onSwitchToRegister }) {
           gap: '24px'
         }}
       >
+        {onBackToHome && (
+          <div 
+            onClick={onBackToHome}
+            style={{ 
+              alignSelf: 'flex-start', 
+              color: 'var(--text-muted)', 
+              fontSize: '0.85rem', 
+              cursor: 'pointer', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              transition: 'color 0.2s',
+              marginBottom: '-12px'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.color = 'var(--primary)'}
+            onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-muted)'}
+          >
+            ← Back to Home
+          </div>
+        )}
         <div style={{ textAlign: 'center' }}>
           <h2 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: '8px', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
             Welcome Back

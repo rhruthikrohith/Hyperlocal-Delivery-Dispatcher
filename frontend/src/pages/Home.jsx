@@ -42,71 +42,40 @@ const Icons = {
   )
 };
 
-const TELANGANA_LOCATIONS = [
-  'Ramnagar, Hyderabad, Telangana',
-  'Ramnagara, Hyderabad, Telangana',
-  'Ramoji Nagar, Hyderabad, Telangana',
-  'Ramoji Film City, Hyderabad, Telangana',
-  'Gachibowli, Hyderabad, Telangana',
-  'Jubilee Hills, Hyderabad, Telangana',
-  'Madhapur, Hyderabad, Telangana',
-  'Secunderabad, Hyderabad, Telangana',
-  'Banjara Hills, Hyderabad, Telangana',
-  'Kukatpally, Hyderabad, Telangana',
-  'Begumpet, Hyderabad, Telangana',
-  'Uppal, Hyderabad, Telangana',
-  'Dilsukhnagar, Hyderabad, Telangana',
-  'Hitech City, Hyderabad, Telangana',
-  'Charminar, Hyderabad, Telangana',
-  'Mehdipatnam, Hyderabad, Telangana',
-  'Ameerpet, Hyderabad, Telangana',
-  'Koti, Hyderabad, Telangana',
-  'Tarnaka, Hyderabad, Telangana',
-  'Kondapur, Hyderabad, Telangana',
-  'Miyapur, Hyderabad, Telangana',
-  'LB Nagar, Hyderabad, Telangana',
-  'Himayatnagar, Hyderabad, Telangana',
-  'Somajiguda, Hyderabad, Telangana',
-  'Nampally, Hyderabad, Telangana',
-  'Alwal, Hyderabad, Telangana',
-  'Tolichowki, Hyderabad, Telangana',
-  'Manikonda, Hyderabad, Telangana',
-  'Yousufguda, Hyderabad, Telangana',
-  'Attapur, Hyderabad, Telangana',
-  'Lingampally, Hyderabad, Telangana',
-  'Nizampet, Hyderabad, Telangana',
-  'Bowenpally, Hyderabad, Telangana',
-  'Nacharam, Hyderabad, Telangana',
-  'Malkajgiri, Hyderabad, Telangana',
-  'Amberpet, Hyderabad, Telangana',
-  'Khairatabad, Hyderabad, Telangana',
-  'Warangal, Telangana',
-  'Nizamabad, Telangana',
-  'Karimnagar, Telangana',
-  'Khammam, Telangana',
-  'Ramagundam, Telangana',
-  'Mahbubnagar, Telangana',
-  'Nalgonda, Telangana',
-  'Adilabad, Telangana',
-  'Suryapet, Telangana',
-  'Miryalaguda, Telangana',
-  'Siddipet, Telangana'
-];
-
-// Helper to simulate coordinates distance and pricing deterministically based on addresses (mirrors backend)
-const estimateDeliveryMetrics = (pickup, delivery) => {
+// Helper to calculate coordinates distance and pricing based on addresses or real coordinates (mirrors backend)
+const estimateDeliveryMetrics = (pickup, delivery, pickupLat, pickupLng, deliveryLat, deliveryLng, isEmergency = false) => {
   if (!pickup || !delivery) return null;
-  const combined = (pickup + delivery).trim().toLowerCase();
-  if (combined.length < 5) return null;
-
-  let hash = 0;
-  for (let i = 0; i < combined.length; i++) {
-    hash = combined.charCodeAt(i) + ((hash << 5) - hash);
+  
+  let distance;
+  if (pickupLat && pickupLng && deliveryLat && deliveryLng) {
+    const R = 6371; // km
+    const dLat = (deliveryLat - pickupLat) * Math.PI / 180;
+    const dLng = (deliveryLng - pickupLng) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(pickupLat * Math.PI / 180) * Math.cos(deliveryLat * Math.PI / 180) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    distance = parseFloat((R * c).toFixed(1));
+  } else {
+    // Fallback to hash-based simulation
+    const combined = (pickup + delivery).trim().toLowerCase();
+    if (combined.length < 5) return null;
+    let hash = 0;
+    for (let i = 0; i < combined.length; i++) {
+      hash = combined.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const seed = (Math.abs(hash) % 1000) / 1000;
+    distance = parseFloat((seed * (12 - 1.5) + 1.5).toFixed(1));
   }
-  const seed = (Math.abs(hash) % 1000) / 1000;
-  const distance = parseFloat((seed * (12 - 1.5) + 1.5).toFixed(1));
-  const deliveryFee = parseFloat((3.0 + distance * 1.5).toFixed(2));
-  const eta = Math.round(8 + distance * 3);
+
+  let deliveryFee = parseFloat((3.0 + distance * 1.5).toFixed(2));
+  let eta = Math.round(8 + distance * 3);
+
+  if (isEmergency) {
+    deliveryFee = parseFloat((deliveryFee + 5.0).toFixed(2));
+    eta = Math.max(5, Math.round(eta * 0.7));
+  }
 
   return { distance, deliveryFee, eta };
 };
@@ -137,7 +106,7 @@ const getAddressCoordinates = (address) => {
   return { lat, lng };
 };
 
-function Home() {
+function Home({ onBackToHome }) {
   const { user, token, logout, setUser } = useContext(AuthContext);
   const [orders, setOrders] = useState([]);
   const [onlineRiders, setOnlineRiders] = useState([]);
@@ -163,6 +132,7 @@ function Home() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [riderOtp, setRiderOtp] = useState('');
 
   // Form State for Booking
   const [formData, setFormData] = useState({
@@ -171,8 +141,19 @@ function Home() {
     deliveryAddress: '',
     pickupPhone: '',
     deliveryPhone: '',
-    paymentMethod: 'Prepaid'
+    paymentMethod: 'Prepaid',
+    pickupLat: null,
+    pickupLng: null,
+    deliveryLat: null,
+    deliveryLng: null,
+    deliveryType: 'Instant',
+    scheduledTime: '',
+    isEmergency: false
   });
+  const [pickupTimeout, setPickupTimeout] = useState(null);
+  const [deliveryTimeout, setDeliveryTimeout] = useState(null);
+  const [pickupLoading, setPickupLoading] = useState(false);
+  const [deliveryLoading, setDeliveryLoading] = useState(false);
   const [items, setItems] = useState([{ name: 'Standard Package', quantity: 1, price: 15.00 }]);
   const [expandedTimelineId, setExpandedTimelineId] = useState(null);
 
@@ -244,7 +225,9 @@ function Home() {
     if (user?.role === 'admin') {
       fetchOrders();
       fetchDispatchStats();
-      fetchOnlineRiders();
+      if (!dispatchTargetId) {
+        fetchOnlineRiders();
+      }
     } else if (user?.role === 'rider') {
       fetchRiderDashboard();
       fetchOrders(); // Retrieve candidate list or assigned list
@@ -259,6 +242,17 @@ function Home() {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       const res = await axios.get(`${import.meta.env.VITE_API_URL}/orders`, config);
       setOrders(res.data);
+
+      // Refresh online riders relative to the active order if the assignment panel is open
+      if (dispatchTargetId) {
+        const activeOrder = res.data.find(o => o._id === dispatchTargetId);
+        if (activeOrder) {
+          const coords = activeOrder.pickupLocation && activeOrder.pickupLocation.lat
+            ? activeOrder.pickupLocation
+            : getAddressCoordinates(activeOrder.pickupAddress);
+          fetchOnlineRiders(coords.lat, coords.lng);
+        }
+      }
     } catch (err) {
       console.error(err);
       setError('Failed to fetch orders list');
@@ -275,7 +269,7 @@ function Home() {
     }
   };
 
-  const fetchOnlineRiders = async (lat = 12.9716, lng = 77.5946) => {
+  const fetchOnlineRiders = async (lat = 17.3850, lng = 78.4867) => {
     try {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       const res = await axios.get(`${import.meta.env.VITE_API_URL}/riders/online?lat=${lat}&lng=${lng}`, config);
@@ -324,43 +318,77 @@ function Home() {
 
   // Create Order
   const handleFormChange = (e) => {
-    const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    const { name, value, type, checked } = e.target;
+    const val = type === 'checkbox' ? checked : value;
+    setFormData(prev => ({
+      ...prev,
+      [name]: val,
+      ...(name === 'pickupAddress' ? { pickupLat: null, pickupLng: null } : {}),
+      ...(name === 'deliveryAddress' ? { deliveryLat: null, deliveryLng: null } : {})
+    }));
 
     if (name === 'pickupAddress') {
-      if (value.trim().length > 0) {
-        const filtered = TELANGANA_LOCATIONS.filter(loc =>
-          loc.toLowerCase().includes(value.toLowerCase())
-        );
-        setPickupSuggestions(filtered);
-        setShowPickupDropdown(true);
+      if (pickupTimeout) clearTimeout(pickupTimeout);
+      if (value.trim().length >= 3) {
+        setPickupLoading(true);
+        const timeout = setTimeout(async () => {
+          try {
+            const res = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=5&viewbox=78.2,17.2,78.6,17.6&bounded=1`);
+            setPickupSuggestions(res.data);
+            setShowPickupDropdown(true);
+          } catch (err) {
+            console.error(err);
+          } finally {
+            setPickupLoading(false);
+          }
+        }, 500);
+        setPickupTimeout(timeout);
       } else {
-        setPickupSuggestions(TELANGANA_LOCATIONS.slice(0, 10));
-        setShowPickupDropdown(true);
+        setPickupSuggestions([]);
+        setShowPickupDropdown(false);
       }
     }
 
     if (name === 'deliveryAddress') {
-      if (value.trim().length > 0) {
-        const filtered = TELANGANA_LOCATIONS.filter(loc =>
-          loc.toLowerCase().includes(value.toLowerCase())
-        );
-        setDeliverySuggestions(filtered);
-        setShowDeliveryDropdown(true);
+      if (deliveryTimeout) clearTimeout(deliveryTimeout);
+      if (value.trim().length >= 3) {
+        setDeliveryLoading(true);
+        const timeout = setTimeout(async () => {
+          try {
+            const res = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(value)}&format=json&limit=5&viewbox=78.2,17.2,78.6,17.6&bounded=1`);
+            setDeliverySuggestions(res.data);
+            setShowDeliveryDropdown(true);
+          } catch (err) {
+            console.error(err);
+          } finally {
+            setDeliveryLoading(false);
+          }
+        }, 500);
+        setDeliveryTimeout(timeout);
       } else {
-        setDeliverySuggestions(TELANGANA_LOCATIONS.slice(0, 10));
-        setShowDeliveryDropdown(true);
+        setDeliverySuggestions([]);
+        setShowDeliveryDropdown(false);
       }
     }
   };
 
-  const handleSelectPickup = (val) => {
-    setFormData(prev => ({ ...prev, pickupAddress: val }));
+  const handleSelectPickup = (item) => {
+    setFormData(prev => ({
+      ...prev,
+      pickupAddress: item.display_name,
+      pickupLat: parseFloat(item.lat),
+      pickupLng: parseFloat(item.lon)
+    }));
     setShowPickupDropdown(false);
   };
 
-  const handleSelectDelivery = (val) => {
-    setFormData(prev => ({ ...prev, deliveryAddress: val }));
+  const handleSelectDelivery = (item) => {
+    setFormData(prev => ({
+      ...prev,
+      deliveryAddress: item.display_name,
+      deliveryLat: parseFloat(item.lat),
+      deliveryLng: parseFloat(item.lon)
+    }));
     setShowDeliveryDropdown(false);
   };
 
@@ -371,34 +399,60 @@ function Home() {
       return;
     }
 
-    // Validation and normalization for Telangana Locations
-    const matchedPickup = TELANGANA_LOCATIONS.find(
-      (loc) => loc.toLowerCase() === formData.pickupAddress.trim().toLowerCase()
-    );
-    const matchedDelivery = TELANGANA_LOCATIONS.find(
-      (loc) => loc.toLowerCase() === formData.deliveryAddress.trim().toLowerCase()
-    );
-
-    if (!matchedPickup) {
-      setError(`Pickup Address "${formData.pickupAddress}" is not a valid Telangana location. Please select one from the suggestions.`);
-      return;
-    }
-    if (!matchedDelivery) {
-      setError(`Delivery Address "${formData.deliveryAddress}" is not a valid Telangana location. Please select one from the suggestions.`);
-      return;
-    }
-
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
+      let pickupLat = formData.pickupLat;
+      let pickupLng = formData.pickupLng;
+      if (!pickupLat || !pickupLng) {
+        try {
+          const res = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(formData.pickupAddress)}&format=json&limit=1&viewbox=78.2,17.2,78.6,17.6&bounded=1`);
+          if (res.data && res.data.length > 0) {
+            pickupLat = parseFloat(res.data[0].lat);
+            pickupLng = parseFloat(res.data[0].lon);
+          } else {
+            setError(`Could not locate Pickup Address "${formData.pickupAddress}" on the map. Please type a valid location.`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          setError('Geocoding pickup address failed. Please try again.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      let deliveryLat = formData.deliveryLat;
+      let deliveryLng = formData.deliveryLng;
+      if (!deliveryLat || !deliveryLng) {
+        try {
+          const res = await axios.get(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(formData.deliveryAddress)}&format=json&limit=1&viewbox=78.2,17.2,78.6,17.6&bounded=1`);
+          if (res.data && res.data.length > 0) {
+            deliveryLat = parseFloat(res.data[0].lat);
+            deliveryLng = parseFloat(res.data[0].lon);
+          } else {
+            setError(`Could not locate Delivery Address "${formData.deliveryAddress}" on the map. Please type a valid location.`);
+            setLoading(false);
+            return;
+          }
+        } catch (err) {
+          setError('Geocoding delivery address failed. Please try again.');
+          setLoading(false);
+          return;
+        }
+      }
+
       const payload = {
         ...formData,
-        pickupAddress: matchedPickup,
-        deliveryAddress: matchedDelivery,
+        pickupAddress: formData.pickupAddress,
+        deliveryAddress: formData.deliveryAddress,
+        pickupLocation: { lat: pickupLat, lng: pickupLng },
+        deliveryLocation: { lat: deliveryLat, lng: deliveryLng },
         items
       };
+
       const config = { headers: { Authorization: `Bearer ${token}` } };
       await axios.post(`${import.meta.env.VITE_API_URL}/orders/create`, payload, config);
       
@@ -409,7 +463,14 @@ function Home() {
         deliveryAddress: '',
         pickupPhone: '',
         deliveryPhone: '',
-        paymentMethod: 'Prepaid'
+        paymentMethod: 'Prepaid',
+        pickupLat: null,
+        pickupLng: null,
+        deliveryLat: null,
+        deliveryLng: null,
+        deliveryType: 'Instant',
+        scheduledTime: '',
+        isEmergency: false
       });
 
       fetchInitialData();
@@ -437,7 +498,9 @@ function Home() {
   // Open Rider dispatch select panel
   const handleOpenAssign = (order) => {
     setDispatchTargetId(order._id);
-    const coords = getAddressCoordinates(order.pickupAddress);
+    const coords = order.pickupLocation && order.pickupLocation.lat
+      ? order.pickupLocation
+      : getAddressCoordinates(order.pickupAddress);
     fetchOnlineRiders(coords.lat, coords.lng);
   };
 
@@ -491,17 +554,18 @@ function Home() {
   };
 
   // Advance Order Status (Rider/Admin)
-  const handleAdvanceStatus = async (orderId, nextStatus) => {
+  const handleAdvanceStatus = async (orderId, nextStatus, extraPayload = {}) => {
     setError('');
     try {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       await axios.put(
         `${import.meta.env.VITE_API_URL}/orders/${orderId}/status`,
-        { status: nextStatus },
+        { status: nextStatus, ...extraPayload },
         config
       );
       if (user?.role === 'rider') {
         fetchRiderDashboard();
+        setRiderOtp(''); // reset input after successful transit verification
       }
       fetchInitialData();
     } catch (err) {
@@ -523,9 +587,57 @@ function Home() {
     }
   };
 
-  const getStatusBadge = (status) => {
+  // Retry Search for Courier
+  const handleRetrySearch = async (orderId) => {
+    setError('');
+    setSuccess('');
+    try {
+      const config = { headers: { Authorization: `Bearer ${token}` } };
+      const res = await axios.put(`${import.meta.env.VITE_API_URL}/orders/${orderId}/retry-search`, {}, config);
+      setSuccess('Search restarted successfully!');
+      fetchInitialData();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to retry search');
+    }
+  };
+
+  const getStatusBadge = (orderOrStatus) => {
+    if (!orderOrStatus) return null;
+    
+    // If a string is passed, handle it directly
+    if (typeof orderOrStatus === 'string') {
+      const status = orderOrStatus;
+      switch (status) {
+        case 'Pending': return <span className="badge badge-pending">Pending</span>;
+        case 'Assigned': return <span className="badge badge-assigned">Assigned</span>;
+        case 'Accepted': return <span className="badge badge-accepted">Accepted</span>;
+        case 'Arrived at Pickup': return <span className="badge badge-transit">Arriving Pickup</span>;
+        case 'Picked Up': return <span className="badge badge-transit">Picked Up</span>;
+        case 'In Transit': return <span className="badge badge-transit">In Transit</span>;
+        case 'Delivered': return <span className="badge badge-delivered">Delivered</span>;
+        case 'Cancelled': return <span className="badge badge-cancelled">Cancelled</span>;
+        default: return <span className="badge">{status}</span>;
+      }
+    }
+    
+    // If an order object is passed, handle searchStatus logic
+    const order = orderOrStatus;
+    const status = order.status;
+    if (status === 'Pending') {
+      if (order.searchStatus === 'Searching') {
+        return (
+          <span className="badge badge-pending" style={{ background: 'linear-gradient(135deg, #f59e0b, #3b82f6)', boxShadow: '0 0 10px rgba(59, 130, 246, 0.5)' }}>
+            Searching
+          </span>
+        );
+      }
+      if (order.searchStatus === 'Not Found') {
+        return <span className="badge badge-cancelled" style={{ background: '#ef4444' }}>No Rider Available</span>;
+      }
+      return <span className="badge badge-pending">Pending</span>;
+    }
+    
     switch (status) {
-      case 'Pending': return <span className="badge badge-pending">Pending</span>;
       case 'Assigned': return <span className="badge badge-assigned">Assigned</span>;
       case 'Accepted': return <span className="badge badge-accepted">Accepted</span>;
       case 'Arrived at Pickup': return <span className="badge badge-transit">Arriving Pickup</span>;
@@ -541,8 +653,16 @@ function Home() {
     <div style={{ minHeight: '100vh', background: 'radial-gradient(circle at 10% 20%, #0c1220 0%, #060911 90%)', padding: '24px' }}>
       
       {/* Top Banner Navigation */}
-      <header className="glass-panel" style={{ padding: '16px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <header className="glass-panel responsive-header" style={{ marginBottom: '24px' }}>
+        <div 
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px', 
+            cursor: onBackToHome ? 'pointer' : 'default' 
+          }} 
+          onClick={onBackToHome || undefined}
+        >
           <div style={{ background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', padding: '10px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 15px rgba(14, 165, 233, 0.4)' }}>
             <Icons.Truck />
           </div>
@@ -552,8 +672,8 @@ function Home() {
           </div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div className="glass-panel" style={{ padding: '6px 14px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.88rem' }}>
+        <div className="header-actions">
+          <div className="glass-panel" style={{ padding: '6px 14px', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.88rem', flex: 1, justifyContent: 'center' }}>
             {user?.role === 'rider' ? (
               <span className={`pulse-dot ${user?.riderStatus === 'online' ? (user?.riderWorkload === 'busy' ? 'pulse-dot-busy' : 'pulse-dot-online') : 'pulse-dot-offline'}`}></span>
             ) : (
@@ -562,6 +682,12 @@ function Home() {
             <span style={{ fontWeight: 600 }}>{user?.name}</span>
             <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', textTransform: 'capitalize', borderLeft: '1px solid var(--border-color)', paddingLeft: '8px' }}>{user?.role}</span>
           </div>
+
+          {onBackToHome && (
+            <button onClick={onBackToHome} className="btn-secondary" style={{ padding: '8px 16px', fontSize: '0.85rem' }}>
+              Home
+            </button>
+          )}
 
           <button onClick={logout} className="btn-danger" style={{ padding: '8px 16px', fontSize: '0.85rem', boxShadow: 'none' }}>
             Logout
@@ -622,10 +748,10 @@ function Home() {
                           <h3 style={{ fontSize: '1.05rem', fontWeight: 700 }}>{order.customerName}</h3>
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Order ID: #{order._id.substring(18)}</span>
                         </div>
-                        {getStatusBadge(order.status)}
+                        {getStatusBadge(order)}
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '0.85rem', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
+                      <div className="responsive-grid-2" style={{ gap: '10px', fontSize: '0.85rem', marginBottom: '14px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px' }}>
                         <div>
                           <strong style={{ color: 'var(--text-muted)' }}>Pickup: </strong>
                           {order.pickupAddress}
@@ -646,6 +772,22 @@ function Home() {
                           <strong style={{ color: 'var(--text-muted)' }}>Stats: </strong>
                           {order.distance} km | {order.eta} mins ETA | Delivery Fee: ${order.deliveryFee}
                         </div>
+                        {order.status === 'Pending' && (
+                          <div>
+                            <strong style={{ color: 'var(--text-muted)' }}>Auto Match: </strong>
+                            <span style={{ color: order.searchStatus === 'Searching' ? '#38bdf8' : '#ef4444', fontWeight: 600 }}>
+                              {order.searchStatus === 'Searching' ? '🔍 Searching nearby...' : '⚠️ No Rider Available'}
+                            </span>
+                          </div>
+                        )}
+                        {order.status === 'Assigned' && order.rider && (
+                          <div>
+                            <strong style={{ color: 'var(--warning)' }}>Auto Match: </strong>
+                            <span style={{ color: '#fbbf24', fontWeight: 600 }}>
+                              ⏳ Assigned to {order.rider.name} (Awaiting Acceptance)
+                            </span>
+                          </div>
+                        )}
                         {order.rider && (
                           <div>
                             <strong style={{ color: 'var(--primary)' }}>Courier: </strong>
@@ -784,16 +926,32 @@ function Home() {
                       <div><strong>Payment Mode:</strong> {riderDashboard.activeOrder.paymentMethod} {riderDashboard.activeOrder.paymentMethod === 'COD' && `(Collect $${riderDashboard.activeOrder.codAmount.toFixed(2)})`}</div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                    <div className="responsive-grid-2" style={{ gap: '12px' }}>
                       <button onClick={() => handleRiderAccept(riderDashboard.activeOrder._id)} className="btn-success">Accept Job</button>
                       <button onClick={() => handleRiderReject(riderDashboard.activeOrder._id)} className="btn-danger">Decline Offer</button>
                     </div>
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                    {riderDashboard.activeOrder.isEmergency && (
+                      <div className="emergency-flash-banner" style={{
+                        padding: '14px',
+                        borderRadius: '10px',
+                        background: 'linear-gradient(135deg, #f43f5e, #be123c)',
+                        border: '1px solid rgba(244, 63, 94, 0.4)',
+                        color: '#ffffff',
+                        fontWeight: 800,
+                        fontSize: '0.9rem',
+                        textAlign: 'center',
+                        boxShadow: '0 0 15px rgba(244, 63, 94, 0.4)',
+                        animation: 'flash-alert 1.5s infinite alternate'
+                      }}>
+                        🚨 EMERGENCY DISPATCH: URGENT MEDICINE/ITEM. PLEASE DELIVER ASAP!
+                      </div>
+                    )}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--primary)' }}>Active Job in Progress</span>
-                      {getStatusBadge(riderDashboard.activeOrder.status)}
+                      {getStatusBadge(riderDashboard.activeOrder)}
                     </div>
 
                     <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', fontSize: '0.9rem' }}>
@@ -830,9 +988,28 @@ function Home() {
                       </button>
                     )}
                     {riderDashboard.activeOrder.status === 'In Transit' && (
-                      <button onClick={() => handleAdvanceStatus(riderDashboard.activeOrder._id, 'Delivered')} className="btn-success" style={{ padding: '14px' }}>
-                        Complete Handover & Deliver
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '10px', border: '1px solid var(--border-color)' }}>
+                        <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)' }}>Enter Customer Handover OTP</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. 4-digit code"
+                          className="glass-input"
+                          maxLength={6}
+                          value={riderOtp}
+                          onChange={(e) => setRiderOtp(e.target.value)}
+                          style={{ textAlign: 'center', letterSpacing: '4px', fontSize: '1.2rem', fontFamily: 'monospace', fontWeight: 800 }}
+                        />
+                        <button 
+                          onClick={() => {
+                            handleAdvanceStatus(riderDashboard.activeOrder._id, 'Delivered', { otp: riderOtp });
+                          }} 
+                          className="btn-success" 
+                          style={{ padding: '14px', marginTop: '4px' }}
+                          disabled={!riderOtp || riderOtp.trim().length === 0}
+                        >
+                          Verify OTP & Complete Handover
+                        </button>
+                      </div>
                     )}
                   </div>
                 )}
@@ -842,10 +1019,11 @@ function Home() {
                 <h3 style={{ fontSize: '1rem', fontWeight: 700, marginBottom: '14px', color: 'var(--primary)' }}>Available Jobs For Pickup ({orders.filter(o => o.status === 'Pending').length})</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {orders.filter(o => o.status === 'Pending').map((order) => (
-                    <div key={order._id} className="glass-panel" style={{ padding: '16px', background: 'rgba(15, 23, 42, 0.45)', borderLeft: '4px solid var(--primary)', borderRadius: '12px' }}>
+                    <div key={order._id} className="glass-panel" style={{ padding: '16px', background: 'rgba(15, 23, 42, 0.45)', borderLeft: order.isEmergency ? '4px solid var(--danger)' : '4px solid var(--primary)', borderRadius: '12px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '10px' }}>
                         <div>
                           <strong style={{ fontSize: '0.92rem' }}>Order #{order._id.substring(18)}</strong>
+                          {order.isEmergency && <span style={{ display: 'inline-block', fontSize: '0.65rem', fontWeight: 800, color: '#f43f5e', background: 'rgba(244,63,94,0.12)', padding: '1px 5px', borderRadius: '4px', border: '1px solid rgba(244,63,94,0.2)', marginLeft: '6px', verticalAlign: 'middle' }}>🚨 URGENT</span>}
                           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Estimated Payout: <span style={{ color: 'var(--success)', fontWeight: 700 }}>${order.deliveryFee.toFixed(2)}</span></div>
                         </div>
                         <button 
@@ -892,7 +1070,7 @@ function Home() {
             </h2>
 
             <form onSubmit={handleCreateOrder} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div className="responsive-grid-2" style={{ gap: '14px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Customer Full Name</label>
                   <input
@@ -919,7 +1097,7 @@ function Home() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div className="responsive-grid-2" style={{ gap: '14px' }}>
                 <div ref={pickupRef} style={{ position: 'relative' }}>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Pickup Point Address</label>
                   <input
@@ -930,20 +1108,18 @@ function Home() {
                     value={formData.pickupAddress}
                     onChange={handleFormChange}
                     onFocus={() => {
-                      if (formData.pickupAddress.trim().length > 0) {
-                        const filtered = TELANGANA_LOCATIONS.filter(loc =>
-                          loc.toLowerCase().includes(formData.pickupAddress.toLowerCase())
-                        );
-                        setPickupSuggestions(filtered);
-                        setShowPickupDropdown(true);
-                      } else {
-                        setPickupSuggestions(TELANGANA_LOCATIONS.slice(0, 10));
+                      if (formData.pickupAddress.trim().length >= 3) {
                         setShowPickupDropdown(true);
                       }
                     }}
                     required
                     autoComplete="off"
                   />
+                  {pickupLoading && (
+                    <div style={{ position: 'absolute', right: '12px', top: '34px', fontSize: '0.8rem', color: 'var(--primary)' }}>
+                      Searching...
+                    </div>
+                  )}
                   {showPickupDropdown && pickupSuggestions.length > 0 && (
                     <div className="glass-panel" style={{
                       position: 'absolute',
@@ -981,7 +1157,7 @@ function Home() {
                             e.target.style.color = 'var(--text-main)';
                           }}
                         >
-                          {loc}
+                          {loc.display_name}
                         </div>
                       ))}
                     </div>
@@ -997,20 +1173,18 @@ function Home() {
                     value={formData.deliveryAddress}
                     onChange={handleFormChange}
                     onFocus={() => {
-                      if (formData.deliveryAddress.trim().length > 0) {
-                        const filtered = TELANGANA_LOCATIONS.filter(loc =>
-                          loc.toLowerCase().includes(formData.deliveryAddress.toLowerCase())
-                        );
-                        setDeliverySuggestions(filtered);
-                        setShowDeliveryDropdown(true);
-                      } else {
-                        setDeliverySuggestions(TELANGANA_LOCATIONS.slice(0, 10));
+                      if (formData.deliveryAddress.trim().length >= 3) {
                         setShowDeliveryDropdown(true);
                       }
                     }}
                     required
                     autoComplete="off"
                   />
+                  {deliveryLoading && (
+                    <div style={{ position: 'absolute', right: '12px', top: '34px', fontSize: '0.8rem', color: 'var(--primary)' }}>
+                      Searching...
+                    </div>
+                  )}
                   {showDeliveryDropdown && deliverySuggestions.length > 0 && (
                     <div className="glass-panel" style={{
                       position: 'absolute',
@@ -1048,7 +1222,7 @@ function Home() {
                             e.target.style.color = 'var(--text-main)';
                           }}
                         >
-                          {loc}
+                          {loc.display_name}
                         </div>
                       ))}
                     </div>
@@ -1056,7 +1230,7 @@ function Home() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
+              <div className="responsive-grid-2" style={{ gap: '14px' }}>
                 <div>
                   <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Pickup Contact Number</label>
                   <input
@@ -1081,21 +1255,80 @@ function Home() {
                 </div>
               </div>
 
+              {/* Separate Section: Priority Options */}
+              <div className="glass-panel" style={{ padding: '16px', background: 'rgba(255, 255, 255, 0.01)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '4px' }}>
+                <h3 style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)' }}>Dispatch Mode</h3>
+                
+                <div className="responsive-grid-2" style={{ gap: '14px' }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Choose Delivery Speed</label>
+                    <select
+                      name="deliveryType"
+                      className="glass-select"
+                      value={formData.deliveryType}
+                      onChange={handleFormChange}
+                    >
+                      <option value="Instant">⚡ Instant Delivery</option>
+                      <option value="Scheduled">📅 Scheduled Delivery</option>
+                    </select>
+                  </div>
+                  {formData.deliveryType === 'Scheduled' && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px' }}>Select Booking Time</label>
+                      <input
+                        type="datetime-local"
+                        name="scheduledTime"
+                        className="glass-input"
+                        value={formData.scheduledTime}
+                        onChange={handleFormChange}
+                        min={new Date(Date.now() + 60000).toISOString().slice(0, 16)} // min is 1 minute from now
+                        required={formData.deliveryType === 'Scheduled'}
+                      />
+                    </div>
+                  )}
+                </div>
 
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(244, 63, 94, 0.04)', padding: '12px 14px', borderRadius: '8px', border: '1px dashed rgba(244, 63, 94, 0.25)', marginTop: '4px' }}>
+                  <input
+                    type="checkbox"
+                    id="isEmergency"
+                    name="isEmergency"
+                    checked={formData.isEmergency}
+                    onChange={handleFormChange}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer', accentColor: 'var(--danger)' }}
+                  />
+                  <label htmlFor="isEmergency" style={{ fontSize: '0.85rem', fontWeight: 700, color: '#f43f5e', cursor: 'pointer', userSelect: 'none' }}>
+                    🚨 Emergency Delivery Mode (Priority Medicines or Urgent Items)
+                  </label>
+                </div>
+              </div>
 
               {/* Dynamic Route Estimation Preview */}
               {(() => {
-                const estimate = estimateDeliveryMetrics(formData.pickupAddress, formData.deliveryAddress);
+                const estimate = estimateDeliveryMetrics(
+                  formData.pickupAddress,
+                  formData.deliveryAddress,
+                  formData.pickupLat,
+                  formData.pickupLng,
+                  formData.deliveryLat,
+                  formData.deliveryLng,
+                  formData.isEmergency
+                );
                 if (!estimate) return null;
                 return (
                   <div className="glass-panel" style={{ padding: '18px', background: 'rgba(14, 165, 233, 0.05)', border: '1px solid rgba(14, 165, 233, 0.25)', boxShadow: '0 0 15px rgba(14, 165, 233, 0.1)', display: 'flex', flexDirection: 'column', gap: '12px', transition: 'all 0.3s ease' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(14, 165, 233, 0.15)', paddingBottom: '8px' }}>
-                      <span style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center' }}>
-                        <Icons.Activity />
-                      </span>
-                      <h4 style={{ fontSize: '0.88rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-main)' }}>Live Route Estimation</h4>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid rgba(14, 165, 233, 0.15)', paddingBottom: '8px', justifyContent: 'space-between' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center' }}>
+                          <Icons.Activity />
+                        </span>
+                        <h4 style={{ fontSize: '0.88rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-main)' }}>Live Route Estimation</h4>
+                      </div>
+                      {formData.isEmergency && (
+                        <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f43f5e', background: 'rgba(244,63,94,0.12)', padding: '2px 8px', borderRadius: '4px', border: '1px solid rgba(244,63,94,0.2)' }}>🚨 PRIORITY DISPATCH</span>
+                      )}
                     </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                    <div className="responsive-grid-3" style={{ gap: '10px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', background: 'rgba(15, 22, 36, 0.5)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                         <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Distance</span>
                         <span style={{ fontSize: '1.02rem', fontWeight: 800, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1134,14 +1367,75 @@ function Home() {
                 <div key={order._id} className="glass-panel" style={{ padding: '16px', background: 'rgba(255,255,255,0.01)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                     <span style={{ fontSize: '0.85rem', fontWeight: 700 }}>#{order._id.substring(18)} - {order.customerName}</span>
-                    {getStatusBadge(order.status)}
+                    {getStatusBadge(order)}
                   </div>
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <div>
+                      {order.isEmergency ? (
+                        <span style={{ display: 'inline-block', fontSize: '0.7rem', fontWeight: 800, color: '#f43f5e', background: 'rgba(244,63,94,0.12)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(244,63,94,0.2)', marginRight: '6px' }}>🚨 EMERGENCY PRIORITY</span>
+                      ) : null}
+                      <span style={{ display: 'inline-block', fontSize: '0.7rem', fontWeight: 700, color: 'var(--primary)', background: 'rgba(14,165,233,0.12)', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(14,165,233,0.15)' }}>
+                        {order.deliveryType === 'Scheduled' ? `📅 Scheduled` : `⚡ Instant`}
+                      </span>
+                    </div>
+                    {order.deliveryType === 'Scheduled' && order.scheduledTime && (
+                      <div style={{ color: 'var(--warning)', fontWeight: 600, fontSize: '0.78rem', marginTop: '2px' }}>
+                        📅 Deliver at: {new Date(order.scheduledTime).toLocaleString()}
+                      </div>
+                    )}
                     <div>Pickup: {order.pickupAddress}</div>
                     <div>Destination: {order.deliveryAddress}</div>
                     <div>Estimated distance: {order.distance} km | ETA: {order.eta} mins | Fare: ${order.deliveryFee}</div>
                     {order.rider && <div>Assigned Courier: <strong style={{ color: 'var(--primary)' }}>{order.rider.name} ({order.rider.phone || 'Courier App'})</strong></div>}
+                    
+                    {order.status !== 'Delivered' && order.status !== 'Cancelled' && (
+                      <div style={{ marginTop: '8px', background: 'rgba(16, 185, 129, 0.05)', border: '1px solid rgba(16, 185, 129, 0.2)', padding: '8px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>🔑 Handover Verification OTP:</span>
+                        <span style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--success)', letterSpacing: '2px', fontFamily: 'monospace' }}>{order.deliveryOTP || '----'}</span>
+                      </div>
+                    )}
                   </div>
+
+                  {order.deliveryType === 'Scheduled' && order.searchStatus === 'None' && (
+                    <div style={{ marginTop: '10px', marginBottom: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                      <span>📅 Scheduled Booking: Automatic rider matching will begin near the scheduled delivery time.</span>
+                    </div>
+                  )}
+
+                  {order.status === 'Pending' && order.searchStatus === 'Searching' && (
+                    <div style={{ marginTop: '10px', marginBottom: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(14, 165, 233, 0.08)', border: '1px solid rgba(14, 165, 233, 0.2)', color: '#38bdf8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <div className="spinner-small" style={{
+                        width: '14px',
+                        height: '14px',
+                        border: '2px solid rgba(56, 189, 248, 0.2)',
+                        borderTopColor: '#38bdf8',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }}></div>
+                      <span style={{ fontWeight: 500 }}>We are still searching for a rider near you...</span>
+                    </div>
+                  )}
+
+                  {order.status === 'Pending' && order.searchStatus === 'Not Found' && (
+                    <div style={{ marginTop: '10px', marginBottom: '10px', padding: '12px 14px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.2)', color: '#f87171', fontSize: '0.8rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 500 }}>⚠️ Anyone is not available near you. We couldn't find a rider.</span>
+                        <button 
+                          onClick={() => handleRetrySearch(order._id)}
+                          className="btn-primary" 
+                          style={{ padding: '6px 12px', fontSize: '0.78rem', width: 'auto', background: 'linear-gradient(135deg, #0ea5e9, #6366f1)', boxShadow: '0 0 10px rgba(14, 165, 233, 0.4)' }}
+                        >
+                          Retry Search
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  
+                  {order.status === 'Assigned' && (
+                    <div style={{ marginTop: '10px', marginBottom: '10px', padding: '10px 14px', borderRadius: '8px', background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.2)', color: '#fbbf24', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span>⏳ Rider found! Waiting for rider to accept...</span>
+                    </div>
+                  )}
 
                   {/* Visual Stepper Tracker */}
                   {order.status !== 'Cancelled' && (
@@ -1278,6 +1572,10 @@ function Home() {
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+        @keyframes flash-alert {
+          0% { opacity: 0.85; filter: brightness(0.95); }
+          100% { opacity: 1; filter: brightness(1.25); }
         }
       `}</style>
     </div>

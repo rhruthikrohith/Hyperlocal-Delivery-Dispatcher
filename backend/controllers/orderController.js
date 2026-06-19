@@ -2,77 +2,142 @@ import Order from '../models/OrderModel.js';
 import User from '../models/UserModel.js';
 import jwt from 'jsonwebtoken';
 
-const TELANGANA_LOCATIONS = [
-  'Ramnagar, Hyderabad, Telangana',
-  'Ramnagara, Hyderabad, Telangana',
-  'Ramoji Nagar, Hyderabad, Telangana',
-  'Ramoji Film City, Hyderabad, Telangana',
-  'Gachibowli, Hyderabad, Telangana',
-  'Jubilee Hills, Hyderabad, Telangana',
-  'Madhapur, Hyderabad, Telangana',
-  'Secunderabad, Hyderabad, Telangana',
-  'Banjara Hills, Hyderabad, Telangana',
-  'Kukatpally, Hyderabad, Telangana',
-  'Begumpet, Hyderabad, Telangana',
-  'Uppal, Hyderabad, Telangana',
-  'Dilsukhnagar, Hyderabad, Telangana',
-  'Hitech City, Hyderabad, Telangana',
-  'Charminar, Hyderabad, Telangana',
-  'Mehdipatnam, Hyderabad, Telangana',
-  'Ameerpet, Hyderabad, Telangana',
-  'Koti, Hyderabad, Telangana',
-  'Tarnaka, Hyderabad, Telangana',
-  'Kondapur, Hyderabad, Telangana',
-  'Miyapur, Hyderabad, Telangana',
-  'LB Nagar, Hyderabad, Telangana',
-  'Himayatnagar, Hyderabad, Telangana',
-  'Somajiguda, Hyderabad, Telangana',
-  'Nampally, Hyderabad, Telangana',
-  'Alwal, Hyderabad, Telangana',
-  'Tolichowki, Hyderabad, Telangana',
-  'Manikonda, Hyderabad, Telangana',
-  'Yousufguda, Hyderabad, Telangana',
-  'Attapur, Hyderabad, Telangana',
-  'Lingampally, Hyderabad, Telangana',
-  'Nizampet, Hyderabad, Telangana',
-  'Bowenpally, Hyderabad, Telangana',
-  'Nacharam, Hyderabad, Telangana',
-  'Malkajgiri, Hyderabad, Telangana',
-  'Amberpet, Hyderabad, Telangana',
-  'Khairatabad, Hyderabad, Telangana',
-  'Warangal, Telangana',
-  'Nizamabad, Telangana',
-  'Karimnagar, Telangana',
-  'Khammam, Telangana',
-  'Ramagundam, Telangana',
-  'Mahbubnagar, Telangana',
-  'Nalgonda, Telangana',
-  'Adilabad, Telangana',
-  'Suryapet, Telangana',
-  'Miryalaguda, Telangana',
-  'Siddipet, Telangana'
-];
-
-// Helper to simulate coordinates distance and pricing deterministically based on addresses
-const calculateOrderMetrics = (pickupAddress, deliveryAddress) => {
-  const combined = ((pickupAddress || '') + (deliveryAddress || '')).trim().toLowerCase();
-  let hash = 0;
-  for (let i = 0; i < combined.length; i++) {
-    hash = combined.charCodeAt(i) + ((hash << 5) - hash);
+// Helper to calculate coordinates distance and pricing deterministically based on addresses or real coordinates
+const calculateOrderMetrics = (pickupAddress, deliveryAddress, pickupCoords, deliveryCoords, isEmergency = false) => {
+  let distance;
+  if (pickupCoords && pickupCoords.lat && pickupCoords.lng && deliveryCoords && deliveryCoords.lat && deliveryCoords.lng) {
+    const R = 6371; // km
+    const dLat = (deliveryCoords.lat - pickupCoords.lat) * Math.PI / 180;
+    const dLng = (deliveryCoords.lng - pickupCoords.lng) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(pickupCoords.lat * Math.PI / 180) * Math.cos(deliveryCoords.lat * Math.PI / 180) * 
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    distance = parseFloat((R * c).toFixed(1));
+  } else {
+    // Fallback to hash-based simulation
+    const combined = ((pickupAddress || '') + (deliveryAddress || '')).trim().toLowerCase();
+    let hash = 0;
+    for (let i = 0; i < combined.length; i++) {
+      hash = combined.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const seed = (Math.abs(hash) % 1000) / 1000;
+    distance = parseFloat((seed * (12 - 1.5) + 1.5).toFixed(1));
   }
-  const seed = (Math.abs(hash) % 1000) / 1000;
 
-  // Generate a distance between 1.5km and 12km based on the seed
-  const distance = parseFloat((seed * (12 - 1.5) + 1.5).toFixed(1));
   // Flat fee $3.00 + $1.50 per km
-  const deliveryFee = parseFloat((3.0 + distance * 1.5).toFixed(2));
+  let deliveryFee = parseFloat((3.0 + distance * 1.5).toFixed(2));
   // ETA: 8 minutes prep + 3 minutes per km
-  const eta = Math.round(8 + distance * 3);
+  let eta = Math.round(8 + distance * 3);
+
+  // Apply Emergency Priority Surcharge and Express ETA
+  if (isEmergency) {
+    deliveryFee = parseFloat((deliveryFee + 5.0).toFixed(2)); // $5 priority medicine/urgent fee
+    eta = Math.max(5, Math.round(eta * 0.7)); // 30% faster ETA, min 5 mins
+  }
 
   return { distance, deliveryFee, eta };
 };
 
-// Create a new order
+// Helper to simulate coordinates of a Telangana location matching the frontend hash logic
+const getAddressCoordinates = (address) => {
+  const clean = (address || '').trim().toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < clean.length; i++) {
+    hash = clean.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const seed = (Math.abs(hash) % 1000) / 1000;
+  // Hyderabad Telangana coordinates bounds
+  const lat = 17.35 + seed * 0.15;
+  const lng = 78.35 + seed * 0.15;
+  return { lat, lng };
+};
+
+// Automate assignment of the nearest online and available rider
+export const autoAssignNearestRider = async (order) => {
+  try {
+    if (order.deliveryType === 'Scheduled' && order.searchStatus === 'None') {
+      return null; // Do not assign scheduled orders until release time
+    }
+
+    const coords = order.pickupLocation && order.pickupLocation.lat ? order.pickupLocation : getAddressCoordinates(order.pickupAddress);
+    
+    // Find online, available riders who are not in the declinedRiders list
+    const query = {
+      role: 'rider',
+      riderStatus: 'online',
+      riderWorkload: 'available',
+      _id: { $nin: order.declinedRiders || [] }
+    };
+    
+    const riders = await User.find(query);
+    if (riders.length === 0) {
+      // Prevent duplicate DB writes if already in Not Found state
+      if (order.status === 'Pending' && order.searchStatus === 'Not Found') {
+        return null;
+      }
+
+      // No available riders nearby
+      order.rider = undefined;
+      order.status = 'Pending';
+      order.searchStatus = 'Not Found';
+      
+      const lastEvent = order.timeline[order.timeline.length - 1];
+      if (!lastEvent || lastEvent.note !== 'No available riders nearby') {
+        order.timeline.push({
+          status: 'Pending',
+          timestamp: new Date(),
+          note: 'No available riders nearby'
+        });
+      }
+      await order.save();
+      return null;
+    }
+    
+    // Calculate distance for each rider and sort
+    const ridersWithDistance = riders.map(rider => {
+      let distance = 0;
+      if (coords && rider.currentLocation) {
+        // Haversine formula calculation
+        const R = 6371; // km
+        const dLat = (rider.currentLocation.lat - coords.lat) * Math.PI / 180;
+        const dLng = (rider.currentLocation.lng - coords.lng) * Math.PI / 180;
+        const a = 
+          Math.sin(dLat/2) * Math.sin(dLat/2) +
+          Math.cos(coords.lat * Math.PI / 180) * Math.cos(rider.currentLocation.lat * Math.PI / 180) * 
+          Math.sin(dLng/2) * Math.sin(dLng/2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+        distance = R * c;
+      }
+      return {
+        rider,
+        distanceToPickup: distance
+      };
+    });
+    
+    // Sort riders by distance (nearest first)
+    ridersWithDistance.sort((a, b) => a.distanceToPickup - b.distanceToPickup);
+    
+    const nearest = ridersWithDistance[0].rider;
+    order.rider = nearest._id;
+    order.status = 'Assigned';
+    order.searchStatus = 'Assigned';
+    order.assignedAt = new Date();
+    order.timeline.push({
+      status: 'Assigned',
+      timestamp: new Date(),
+      note: `Automatically assigned to nearest rider: ${nearest.name} (${ridersWithDistance[0].distanceToPickup.toFixed(2)} km away)`
+    });
+    
+    await order.save();
+    return nearest;
+  } catch (error) {
+    console.error('Error in autoAssignNearestRider:', error.message);
+    return null;
+  }
+};
+
 export const createOrder = async (req, res) => {
   try {
     const {
@@ -82,26 +147,27 @@ export const createOrder = async (req, res) => {
       items,
       paymentMethod,
       pickupPhone,
-      deliveryPhone
+      deliveryPhone,
+      pickupLocation,
+      deliveryLocation,
+      deliveryType,
+      scheduledTime,
+      isEmergency
     } = req.body;
 
     if (!customerName || !pickupAddress || !deliveryAddress) {
       return res.status(400).json({ message: 'Customer name, pickup address, and delivery address are required' });
     }
 
-    // Validation and normalization of Telangana Locations
-    const matchedPickup = TELANGANA_LOCATIONS.find(
-      (loc) => loc.toLowerCase() === pickupAddress.trim().toLowerCase()
-    );
-    const matchedDelivery = TELANGANA_LOCATIONS.find(
-      (loc) => loc.toLowerCase() === deliveryAddress.trim().toLowerCase()
-    );
+    // Determine coordinates bounds
+    let pickupCoords = pickupLocation;
+    let deliveryCoords = deliveryLocation;
 
-    if (!matchedPickup) {
-      return res.status(400).json({ message: `Pickup Address "${pickupAddress}" is not a valid Telangana location.` });
+    if (!pickupCoords || !pickupCoords.lat || !pickupCoords.lng) {
+      pickupCoords = getAddressCoordinates(pickupAddress);
     }
-    if (!matchedDelivery) {
-      return res.status(400).json({ message: `Delivery Address "${deliveryAddress}" is not a valid Telangana location.` });
+    if (!deliveryCoords || !deliveryCoords.lat || !deliveryCoords.lng) {
+      deliveryCoords = getAddressCoordinates(deliveryAddress);
     }
 
     // Determine role of creator
@@ -110,7 +176,15 @@ export const createOrder = async (req, res) => {
       return res.status(404).json({ message: 'Creator user not found' });
     }
 
-    const { distance, deliveryFee, eta } = calculateOrderMetrics(matchedPickup, matchedDelivery);
+    const isEmergencyBool = isEmergency === true || isEmergency === 'true';
+
+    const { distance, deliveryFee, eta } = calculateOrderMetrics(
+      pickupAddress,
+      deliveryAddress,
+      pickupCoords,
+      deliveryCoords,
+      isEmergencyBool
+    );
 
     // Parse items and calculate total amount
     const parsedItems = items && items.length > 0 ? items : [{ name: 'Standard Package', quantity: 1, price: 15.00 }];
@@ -121,8 +195,10 @@ export const createOrder = async (req, res) => {
 
     const orderData = {
       customerName,
-      pickupAddress: matchedPickup,
-      deliveryAddress: matchedDelivery,
+      pickupAddress,
+      deliveryAddress,
+      pickupLocation: pickupCoords,
+      deliveryLocation: deliveryCoords,
       items: parsedItems,
       totalAmount,
       pickupPhone: pickupPhone || '',
@@ -132,12 +208,18 @@ export const createOrder = async (req, res) => {
       eta,
       paymentMethod: paymentMethod || 'Prepaid',
       codAmount,
+      deliveryType: deliveryType || 'Instant',
+      scheduledTime: deliveryType === 'Scheduled' ? new Date(scheduledTime || Date.now()) : undefined,
+      isEmergency: isEmergencyBool,
       status: 'Pending',
+      searchStatus: deliveryType === 'Scheduled' ? 'None' : 'Searching',
       timeline: [
         {
           status: 'Pending',
           timestamp: new Date(),
-          note: 'Order created successfully'
+          note: deliveryType === 'Scheduled'
+            ? `Order successfully scheduled for ${new Date(scheduledTime).toLocaleString()}`
+            : 'Order created successfully'
         }
       ]
     };
@@ -145,6 +227,12 @@ export const createOrder = async (req, res) => {
     orderData.customerId = creator._id;
 
     const order = await Order.create(orderData);
+    
+    // Auto-assign the nearest rider immediately if it is an Instant order
+    if (order.deliveryType !== 'Scheduled') {
+      await autoAssignNearestRider(order);
+    }
+    
     res.status(201).json(order);
 
   } catch (error) {
@@ -169,10 +257,19 @@ export const getOrders = async (req, res) => {
           if (user.role === 'customer') {
             filters.customerId = user._id;
           } else if (user.role === 'rider') {
-            // Riders see their assigned jobs or orders they took
+            // Riders see their assigned jobs or pending orders that are active (Instant, or Scheduled and released)
             filters.$or = [
               { rider: user._id },
-              { status: 'Pending' } // Riders can view pending orders to see availability
+              { 
+                status: 'Pending',
+                $or: [
+                  { deliveryType: { $ne: 'Scheduled' } },
+                  { 
+                    deliveryType: 'Scheduled',
+                    searchStatus: { $in: ['Searching', 'Not Found'] }
+                  }
+                ]
+              }
             ];
           }
         }
@@ -229,6 +326,8 @@ export const assignRider = async (req, res) => {
 
     order.rider = rider._id;
     order.status = 'Assigned';
+    order.searchStatus = 'Assigned';
+    order.assignedAt = new Date();
     order.timeline.push({
       status: 'Assigned',
       timestamp: new Date(),
@@ -256,6 +355,10 @@ export const acceptOrder = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
+    if (order.deliveryType === 'Scheduled' && order.searchStatus === 'None') {
+      return res.status(403).json({ message: 'Rider cannot access or accept this scheduled package before its scheduled delivery time.' });
+    }
+
     if (order.rider) {
       if (order.rider.toString() !== req.userId.toString()) {
         return res.status(403).json({ message: 'This order is not assigned to you' });
@@ -265,6 +368,7 @@ export const acceptOrder = async (req, res) => {
     }
 
     order.status = 'Accepted';
+    order.searchStatus = 'None';
     order.timeline.push({
       status: 'Accepted',
       timestamp: new Date(),
@@ -291,26 +395,137 @@ export const rejectOrder = async (req, res) => {
       return res.status(404).json({ message: 'Order not found' });
     }
 
-    if (order.rider.toString() !== req.userId.toString()) {
+    if (order.deliveryType === 'Scheduled' && order.searchStatus === 'None') {
+      return res.status(403).json({ message: 'Rider cannot access or reject this scheduled package before its scheduled delivery time.' });
+    }
+
+    if (!order.rider || order.rider.toString() !== req.userId.toString()) {
       return res.status(403).json({ message: 'This order is not assigned to you' });
     }
 
-    order.status = 'Pending';
-    order.rider = undefined;
+    // Mark rider as available
+    await User.findByIdAndUpdate(req.userId, { riderWorkload: 'available' });
+
+    // Track that this rider declined
+    if (!order.declinedRiders.includes(req.userId)) {
+      order.declinedRiders.push(req.userId);
+    }
+
     order.timeline.push({
       status: 'Pending',
       timestamp: new Date(),
       note: 'Order declined by rider'
     });
-    await order.save();
 
-    // Mark rider as available
-    await User.findByIdAndUpdate(req.userId, { riderWorkload: 'available' });
+    // Automatically check/assign the next nearest rider
+    await autoAssignNearestRider(order);
 
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
+};
+
+// Customer/Admin manual retry search for riders
+export const retrySearchOrder = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const order = await Order.findById(id);
+
+    if (!order) {
+      return res.status(404).json({ message: 'Order not found' });
+    }
+
+    // Reset matching state
+    order.declinedRiders = [];
+    order.searchStatus = 'Searching';
+    order.status = 'Pending';
+    order.rider = undefined;
+    order.timeline.push({
+      status: 'Pending',
+      timestamp: new Date(),
+      note: 'Retrying search for nearby riders'
+    });
+
+    await autoAssignNearestRider(order);
+
+    res.json(order);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// Background interval to handle 15-second assignment timeouts
+export const startAssignmentTimeoutChecker = () => {
+  console.log('🔄 Automatic assignment timeout checker started.');
+  setInterval(async () => {
+    try {
+      const now = new Date();
+      const timeoutLimit = 15000; // 15 seconds
+      const expirationTime = new Date(now.getTime() - timeoutLimit);
+
+      // Find orders that are currently Assigned and have been assigned longer than 15 seconds
+      const ordersToTimeout = await Order.find({
+        status: 'Assigned',
+        assignedAt: { $lte: expirationTime }
+      });
+
+      for (const order of ordersToTimeout) {
+        if (order.rider) {
+          const riderId = order.rider;
+          console.log(`[Auto-Timeout] Order ${order._id} assignment to rider ${riderId} timed out.`);
+
+          // Reset rider workload to available
+          await User.findByIdAndUpdate(riderId, { riderWorkload: 'available' });
+
+          // Add rider to declined list
+          if (!order.declinedRiders.includes(riderId)) {
+            order.declinedRiders.push(riderId);
+          }
+
+          order.timeline.push({
+            status: 'Pending',
+            timestamp: new Date(),
+            note: 'Assignment timed out (rider did not respond within 15 seconds)'
+          });
+
+          // Search and assign the next nearest rider
+          await autoAssignNearestRider(order);
+        }
+      }
+
+      // Find scheduled orders that are due (within 2 minutes) and transition them to active matching
+      const dueScheduledOrders = await Order.find({
+        deliveryType: 'Scheduled',
+        searchStatus: 'None',
+        status: 'Pending',
+        scheduledTime: { $lte: new Date(now.getTime() + 120000) }
+      });
+
+      for (const order of dueScheduledOrders) {
+        order.searchStatus = 'Searching';
+        order.timeline.push({
+          status: 'Pending',
+          timestamp: new Date(),
+          note: 'Scheduled delivery time reached. Starting automatic rider dispatch.'
+        });
+        await order.save();
+      }
+
+      // Check for any Pending orders that have not been assigned a rider yet (including Not Found states)
+      // prioritize emergency orders at the front of the queue
+      const pendingOrders = await Order.find({
+        status: 'Pending',
+        searchStatus: { $in: ['Searching', 'Not Found'] }
+      }).sort({ isEmergency: -1, createdAt: 1 });
+
+      for (const order of pendingOrders) {
+        await autoAssignNearestRider(order);
+      }
+    } catch (err) {
+      console.error('Error in assignment timeout checker:', err.message);
+    }
+  }, 3000); // Check every 3 seconds
 };
 
 // Update order status step-by-step
@@ -334,6 +549,11 @@ export const updateOrderStatus = async (req, res) => {
 
     // Handle financial and workload additions upon delivery completion
     if (status === 'Delivered') {
+      const { otp } = req.body;
+      if (!otp || otp.toString().trim() !== order.deliveryOTP) {
+        return res.status(400).json({ message: 'Invalid Handover OTP. Please ask the customer for the correct 4-digit code.' });
+      }
+
       order.paymentStatus = 'Paid';
       
       // Update rider's account
@@ -433,7 +653,7 @@ export const seedMockData = async (req, res) => {
         phone: '+91 98765 43210',
         riderStatus: 'online',
         riderWorkload: 'available',
-        currentLocation: { lat: 17.4483, lng: 78.3741 }, // Gachibowli, Hyderabad, TS
+        currentLocation: { lat: 17.4001, lng: 78.4001 }, // Gachibowli, Hyderabad, TS
         earnings: 120.50,
         collectedCash: 45.00
       },

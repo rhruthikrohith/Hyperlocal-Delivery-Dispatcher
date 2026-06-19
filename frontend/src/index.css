@@ -357,3 +357,356 @@ body {
   gap: 16px;
   margin-bottom: 24px;
 }
+
+/* Responsive grid utilities */
+.responsive-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+@media (min-width: 640px) {
+  .responsive-grid-2 {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.responsive-grid-3 {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+@media (min-width: 480px) {
+  .responsive-grid-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 768px) {
+  .responsive-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Responsive Header */
+.responsive-header {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px;
+}
+
+@media (min-width: 640px) {
+  .responsive-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 24px;
+  }
+}
+
+/* Profile wrapper responsive */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  justify-content: space-between;
+}
+
+@media (min-width: 640px) {
+  .header-actions {
+    width: auto;
+    justify-content: flex-end;
+  }
+}
+
+/* Landing Page Styles */
+.landing-container {
+  background: radial-gradient(circle at 10% 20%, #0c1220 0%, #060911 90%);
+  color: var(--text-main);
+  min-height: 100vh;
+  font-family: var(--font-family);
+  overflow-x: hidden;
+}
+
+.landing-header {
+  height: 80px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+@media (min-width: 768px) {
+  .landing-header {
+    padding: 0 40px;
+  }
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.landing-nav {
+  display: none;
+  gap: 24px;
+}
+
+@media (min-width: 1024px) {
+  .landing-nav {
+    display: flex;
+  }
+}
+
+.landing-nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.95rem;
+  transition: color 0.2s ease;
+  cursor: pointer;
+}
+
+.landing-nav-link:hover {
+  color: var(--primary);
+}
+
+.landing-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (min-width: 640px) {
+  .landing-actions {
+    gap: 16px;
+  }
+}
+
+.btn-landing-primary {
+  background: linear-gradient(135deg, var(--primary) 0%, #0284c7 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 14px 0 rgba(14, 165, 233, 0.25);
+  transition: all 0.2s ease;
+}
+
+.btn-landing-primary:hover {
+  filter: brightness(1.1);
+  box-shadow: 0 6px 20px 0 rgba(14, 165, 233, 0.4);
+}
+
+.btn-landing-secondary {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--primary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 18px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-landing-secondary:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--primary);
+}
+
+/* Hero Section */
+.landing-hero {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 40px;
+  padding: 40px 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+  align-items: center;
+}
+
+@media (min-width: 1024px) {
+  .landing-hero {
+    grid-template-columns: 1fr 1fr;
+    padding: 80px 40px;
+  }
+}
+
+.hero-left {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.hero-title {
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--text-main);
+  background: linear-gradient(135deg, #ffffff 0%, #94a3b8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@media (min-width: 768px) {
+  .hero-title {
+    font-size: 3.5rem;
+  }
+}
+
+.hero-subtitle {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.hero-buttons {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.hero-right {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.2;
+  background: radial-gradient(circle at center, rgba(14, 165, 233, 0.08), #0c1220 75%);
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  box-shadow: var(--shadow-premium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Map Mockup Background */
+.map-mockup {
+  position: absolute;
+  inset: 0;
+  opacity: 0.15;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+
+/* Dashboard Cards Mockup inside Hero */
+.mock-card {
+  position: absolute;
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  box-shadow: var(--shadow-premium);
+  padding: 16px;
+  transition: all 0.3s ease;
+  z-index: 2;
+  color: var(--text-main);
+}
+
+.mock-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(14, 165, 233, 0.35);
+  box-shadow: 0 12px 30px -8px rgba(14, 165, 233, 0.2);
+}
+
+.card-pickup-dropoff {
+  top: 10%;
+  right: 5%;
+  width: 200px;
+}
+
+@media (min-width: 480px) {
+  .card-pickup-dropoff {
+    width: 240px;
+  }
+}
+
+.card-schedule {
+  bottom: 8%;
+  left: 5%;
+  width: 220px;
+}
+
+@media (min-width: 480px) {
+  .card-schedule {
+    width: 260px;
+  }
+}
+
+.card-package {
+  top: 25%;
+  left: 8%;
+  width: 100px;
+  text-align: center;
+  padding: 12px;
+}
+
+@media (min-width: 480px) {
+  .card-package {
+    width: 120px;
+    padding: 16px;
+  }
+}
+
+.card-status {
+  bottom: 25%;
+  right: 8%;
+  width: 160px;
+}
+
+@media (min-width: 480px) {
+  .card-status {
+    width: 200px;
+  }
+}
+
+.card-miles {
+  bottom: 5%;
+  right: 12%;
+  padding: 6px 12px;
+  border-radius: 30px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  color: var(--primary);
+  background: rgba(14, 165, 233, 0.1);
+  border: 1px solid rgba(14, 165, 233, 0.2);
+}
+
+@media (min-width: 480px) {
+  .card-miles {
+    padding: 8px 16px;
+    font-size: 0.85rem;
+  }
+}
+
+.mock-line-blue {
+  height: 6px;
+  background: #0ea5e9;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.mock-line-gray {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  margin-top: 6px;
+}
+

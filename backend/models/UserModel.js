@@ -29,7 +29,7 @@ const userSchema = new mongoose.Schema({
   riderStatus: {
     type: String,
     enum: ['online', 'offline'],
-    default: 'offline'
+    default: 'online'
   },
   riderWorkload: {
     type: String,

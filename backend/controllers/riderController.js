@@ -18,6 +18,14 @@ export const toggleStatus = async (req, res) => {
 
     await rider.save();
 
+    // If going online, clear their ID from the declinedRiders arrays of all Pending orders
+    if (rider.riderStatus === 'online') {
+      await Order.updateMany(
+        { status: 'Pending' },
+        { $pull: { declinedRiders: rider._id } }
+      );
+    }
+
     res.json({
       message: `Rider is now ${rider.riderStatus}`,
       riderStatus: rider.riderStatus,

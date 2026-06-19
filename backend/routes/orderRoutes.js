@@ -10,7 +10,8 @@ import {
   rejectOrder,
   updateOrderStatus,
   getDispatchStats,
-  seedMockData
+  seedMockData,
+  retrySearchOrder
 } from '../controllers/orderController.js';
 
 const router = express.Router();
@@ -32,5 +33,6 @@ router.put('/:id/assign', authenticate, assignRider);
 router.put('/:id/accept', authenticate, acceptOrder);
 router.put('/:id/reject', authenticate, rejectOrder);
 router.put('/:id/status', authenticate, updateOrderStatus);
+router.put('/:id/retry-search', authenticate, retrySearchOrder);
 
 export default router;

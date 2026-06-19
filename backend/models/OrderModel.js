@@ -13,6 +13,14 @@ const orderSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  pickupLocation: {
+    lat: { type: Number },
+    lng: { type: Number }
+  },
+  deliveryLocation: {
+    lat: { type: Number },
+    lng: { type: Number }
+  },
   status: {
     type: String,
     enum: ['Pending', 'Assigned', 'Accepted', 'Arrived at Pickup', 'Picked Up', 'In Transit', 'Delivered', 'Cancelled'],
@@ -30,6 +38,20 @@ const orderSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  assignedAt: {
+    type: Date
+  },
+  searchStatus: {
+    type: String,
+    enum: ['Searching', 'Not Found', 'Assigned', 'None'],
+    default: 'Searching'
+  },
+  declinedRiders: [
+    {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  ],
   items: [
     {
       name: { type: String, required: true },
@@ -75,6 +97,21 @@ const orderSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  deliveryType: {
+    type: String,
+    enum: ['Instant', 'Scheduled'],
+    default: 'Instant'
+  },
+  scheduledTime: {
+    type: Date
+  },
+  isEmergency: {
+    type: Boolean,
+    default: false
+  },
+  deliveryOTP: {
+    type: String
+  },
   timeline: [
     {
       status: { type: String },
@@ -84,6 +121,13 @@ const orderSchema = new mongoose.Schema({
   ]
 }, {
   timestamps: true
+});
+
+orderSchema.pre('save', function(next) {
+  if (!this.deliveryOTP) {
+    this.deliveryOTP = Math.floor(1000 + Math.random() * 9000).toString(); // 4-digit OTP code
+  }
+  next();
 });
 
 export default mongoose.model('Order', orderSchema);
